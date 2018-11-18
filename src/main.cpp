@@ -1,7 +1,10 @@
 #include <Arduino.h>
 #include <WebSocketsServer.h>
+#include <ArduinoJson.h>
+
 #define USE_SERIAL Serial
 #define BUTTON_PIN 1
+#define TABLE_NO 2
 
 WebSocketsServer webSocket = WebSocketsServer(81);
 
@@ -23,8 +26,8 @@ bool do_action_wifi_resting();
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length);
 void init();
 
-const char* ssid = "KDG-7400B";
-const char* password =  "v4J409XZQwZP";
+const char* ssid = "Wrangler";
+const char* password =  "$%2102120";
 
 void action_once_wifi_server_as_access_point(){
   //initiate open access point
@@ -36,6 +39,9 @@ void action_once_wifi_server_as_access_point(){
   USE_SERIAL.println();
   USE_SERIAL.println("Connected");
   Serial.println(WiFi.softAPIP());
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
+
 }
 
 void action_once_wifi_server_as_connected(){
@@ -46,6 +52,9 @@ void action_once_wifi_server_as_connected(){
     USE_SERIAL.println("Connecting to WiFi..");
   }
   USE_SERIAL.println("Connected to the WiFi network");
+  USE_SERIAL.println(WiFi.localIP());
+  webSocket.begin();
+  webSocket.onEvent(webSocketEvent);
 }
 
 void action_once_wifi_resting(){
@@ -61,6 +70,7 @@ void do_action_wifi_server_as_access_point(){
   // Check client response
   // check if value is good
   // change to wifi_server_as_connected
+  //USE_SERIAL.println("Access-Point Websocket");
   webSocket.loop();
   serial_trigger();
 }
@@ -69,6 +79,7 @@ void do_action_wifi_server_as_connected(){
   // Wait for client to connect and read value
   // Check client response
   // shutdown
+  //USE_SERIAL.println("Connected Websocket");
   webSocket.loop();
   serial_trigger();
 }
@@ -122,8 +133,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
             {
                 IPAddress ip = webSocket.remoteIP(num);
                 USE_SERIAL.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-
-				// send message to client
+				        // send message to client
 				        webSocket.sendTXT(num, "Connected");
             }
             break;
@@ -134,11 +144,28 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length
               // check if payload is JSON compatible ?
               // yes then send this msg and change state
               // send acknowledgement to client
+              DynamicJsonBuffer jsonBuffer;
+              char buffer[length + 1];
+              for(int i = 0; i < length ; i++){
+                buffer[i] = (char)(*payload);
+                payload++;
+              }
+              buffer[length] = '\0';
+              data_to_be_routed = String(buffer);
+              USE_SERIAL.print("PAYLOAD STRING: ");
+              USE_SERIAL.println(data_to_be_routed);
+              JsonObject& root = jsonBuffer.parseObject(data_to_be_routed);
+              root[String("tableNo")]= TABLE_NO;
+              String tempString;
+              root.printTo(tempString);
+              USE_SERIAL.print("NEW STRING: ");
+              USE_SERIAL.println(data_to_be_routed);
               webSocket.sendTXT(num, "OK");
               current_state = wifi_server_as_connected;
             }
             else if (current_state == wifi_server_as_connected){
-                webSocket.sendTXT(num, "OK");
+                USE_SERIAL.print("GOT PING ");
+                webSocket.sendTXT(num,data_to_be_routed);
                 current_state = wifi_server_resting;
             }
           }
@@ -170,8 +197,6 @@ void setup() {
       USE_SERIAL.flush();
       delay(1000);
   }
-  webSocket.begin();
-  webSocket.onEvent(webSocketEvent);
 }
 
 void loop() {
